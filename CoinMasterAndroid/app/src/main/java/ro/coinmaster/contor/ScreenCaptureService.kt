@@ -116,7 +116,7 @@ class ScreenCaptureService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun analyzeFrame(image: Image) {
+    private fun analyzeFrameCaptureStore.updateFrame(current)(image: Image) {
         val now = System.currentTimeMillis()
 
         if (now - lastAnalysis < 300) return
