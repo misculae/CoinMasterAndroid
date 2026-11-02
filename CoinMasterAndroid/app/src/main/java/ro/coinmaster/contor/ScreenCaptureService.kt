@@ -5,9 +5,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -15,15 +16,12 @@ import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
-import android.os.Environment
 import android.os.IBinder
-import android.os.SystemClock
-import android.provider.MediaStore
-import android.util.DisplayMetrics
 import android.view.WindowManager
-import android.graphics.Bitmap
-import java.io.OutputStream
-import java.util.concurrent.atomic.AtomicBoolean
+import android.util.DisplayMetrics
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 
 class ScreenCaptureService : Service() {
 
@@ -31,14 +29,20 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
 
-    private val savedImage = AtomicBoolean(false)
-    private var startTime = 0L
+    private var lastFrame: Bitmap? = null
+    private var stableFrames = 0
+    private var lastAnalysis = 0L
+
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onStartCommand(
         intent: Intent?,
         flags: Int,
         startId: Int
     ): Int {
+
+        if (projection != null) return START_NOT_STICKY
+
         val resultCode = intent?.getIntExtra("resultCode", 0) ?: 0
 
         val data = if (Build.VERSION.SDK_INT >= 33) {
@@ -55,8 +59,6 @@ class ScreenCaptureService : Service() {
 
         createNotification()
         startForeground(1, notification())
-
-        startTime = SystemClock.elapsedRealtime()
 
         val manager = getSystemService(
             Context.MEDIA_PROJECTION_SERVICE
@@ -82,22 +84,9 @@ class ScreenCaptureService : Service() {
 
             if (image != null) {
                 try {
-                    val elapsed =
-                        SystemClock.elapsedRealtime() - startTime
-
-                    // Asteapta 10 secunde ca utilizatorul
-                    // sa deschida jocul Coin Master.
-                    if (elapsed >= 10000 &&
-                        savedImage.compareAndSet(false, true)
-                    ) {
-                        saveImage(image)
-                    }
+                    analyzeFrame(image)
                 } catch (e: Exception) {
-                    android.util.Log.e(
-                        "CoinMaster",
-                        "Eroare: ${e.message}"
-                    )
-                    savedImage.set(false)
+                    Log.e("CoinMaster", "Analiza: ${e.message}")
                 } finally {
                     image.close()
                 }
@@ -110,7 +99,7 @@ class ScreenCaptureService : Service() {
                     stopSelf()
                 }
             },
-            null
+            handler
         )
 
         virtualDisplay = projection?.createVirtualDisplay(
@@ -121,73 +110,112 @@ class ScreenCaptureService : Service() {
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             imageReader?.surface,
             null,
-            null
+            handler
         )
 
         return START_NOT_STICKY
     }
 
-    private fun saveImage(image: Image) {
+    private fun analyzeFrame(image: Image) {
+        val now = System.currentTimeMillis()
+
+        if (now - lastAnalysis < 300) return
+        lastAnalysis = now
+
         val plane = image.planes[0]
         val buffer = plane.buffer
         val pixelStride = plane.pixelStride
         val rowStride = plane.rowStride
+
         val width = image.width
         val height = image.height
 
         val rowPadding = rowStride - pixelStride * width
         val bitmapWidth = width + rowPadding / pixelStride
 
-        val fullBitmap = Bitmap.createBitmap(
+        val full = Bitmap.createBitmap(
             bitmapWidth,
             height,
             Bitmap.Config.ARGB_8888
         )
 
-        fullBitmap.copyPixelsFromBuffer(buffer)
+        full.copyPixelsFromBuffer(buffer)
 
-        val bitmap = Bitmap.createBitmap(
-            fullBitmap, 0, 0, width, height
+        val current = Bitmap.createBitmap(
+            full, 0, 0, width, height
         )
 
-        val values = ContentValues().apply {
-            put(
-                MediaStore.Images.Media.DISPLAY_NAME,
-                "CoinMaster_calibrare.jpg"
-            )
-            put(
-                MediaStore.Images.Media.MIME_TYPE,
-                "image/jpeg"
-            )
-            if (Build.VERSION.SDK_INT >= 29) {
-                put(
-                    MediaStore.Images.Media.RELATIVE_PATH,
-                    Environment.DIRECTORY_PICTURES + "/CoinMaster"
+        full.recycle()
+
+        // Zona centrala: doar pentru analiza si calibrare.
+        val left = (width * 0.05f).toInt()
+        val top = (height * 0.25f).toInt()
+        val cropWidth = (width * 0.90f).toInt()
+        val cropHeight = (height * 0.50f).toInt()
+
+        val center = Bitmap.createBitmap(
+            current,
+            left,
+            top,
+            cropWidth,
+            cropHeight
+        )
+
+        current.recycle()
+
+        val previous = lastFrame
+        lastFrame = center
+
+        if (previous != null) {
+            val same = compareFrames(previous, center)
+
+            if (same) {
+                stableFrames++
+            } else {
+                stableFrames = 0
+            }
+
+            previous.recycle()
+
+            if (stableFrames >= 3) {
+                Log.d(
+                    "CoinMaster",
+                    "Imagine stabila. Zona centrala pregatita pentru recunoastere."
                 )
             }
         }
+    }
 
-        val uri = contentResolver.insert(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            values
-        )
-
-        if (uri != null) {
-            val output: OutputStream? =
-                contentResolver.openOutputStream(uri)
-
-            output?.use {
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it)
-            }
-
-            android.util.Log.i(
-                "CoinMaster",
-                "Imaginea jocului salvata: $uri"
-            )
+    private fun compareFrames(a: Bitmap, b: Bitmap): Boolean {
+        if (a.width != b.width || a.height != b.height) {
+            return false
         }
 
-        fullBitmap.recycle()
-        bitmap.recycle()
+        var differences = 0
+        val stepX = maxOf(1, a.width / 30)
+        val stepY = maxOf(1, a.height / 30)
+
+        var samples = 0
+
+        for (y in 0 until a.height step stepY) {
+            for (x in 0 until a.width step stepX) {
+                val ca = a.getPixel(x, y)
+                val cb = b.getPixel(x, y)
+
+                val diff =
+                    kotlin.math.abs(android.graphics.Color.red(ca) -
+                        android.graphics.Color.red(cb)) +
+                    kotlin.math.abs(android.graphics.Color.green(ca) -
+                        android.graphics.Color.green(cb)) +
+                    kotlin.math.abs(android.graphics.Color.blue(ca) -
+                        android.graphics.Color.blue(cb))
+
+                if (diff > 45) differences++
+                samples++
+            }
+        }
+
+        return samples > 0 && differences < samples * 0.03
     }
 
     private fun createNotification() {
@@ -207,7 +235,7 @@ class ScreenCaptureService : Service() {
         return if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(this, "cm_capture")
                 .setContentTitle("Coin Master Contor")
-                .setContentText("Captura ecranului este activa")
+                .setContentText("Analiza ecranului este activa")
                 .setSmallIcon(android.R.drawable.ic_menu_view)
                 .build()
         } else {
@@ -220,9 +248,12 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onDestroy() {
+        lastFrame?.recycle()
+        lastFrame = null
         virtualDisplay?.release()
         imageReader?.close()
         projection?.stop()
+        projection = null
         super.onDestroy()
     }
 
