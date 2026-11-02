@@ -4,21 +4,19 @@ workflows:
     name: Coin Master Android
     max_build_duration: 60
     instance_type: mac_mini_m2
-
     environment:
       java: 17
-
     scripts:
-      - name: Repair Android SDK Build Tools
+      - name: Check Android SDK
         script: |
-          yes | sdkmanager --licenses
-          rm -rf "$ANDROID_SDK_ROOT/build-tools/34.0.0"
-          sdkmanager --install "build-tools;34.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la "$ANDROID_HOME/cmdline-tools" || true
+          find "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -10
 
       - name: Build Android APK
         script: |
           cd CoinMasterAndroid
           gradle :app:assembleDebug
-
     artifacts:
       - CoinMasterAndroid/app/build/outputs/apk/debug/*.apk
