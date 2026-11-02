@@ -17,6 +17,7 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.DisplayMetrics
 import android.view.WindowManager
@@ -30,7 +31,8 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
 
-    private val savedFirstImage = AtomicBoolean(false)
+    private val savedImage = AtomicBoolean(false)
+    private var startTime = 0L
 
     override fun onStartCommand(
         intent: Intent?,
@@ -53,6 +55,8 @@ class ScreenCaptureService : Service() {
 
         createNotification()
         startForeground(1, notification())
+
+        startTime = SystemClock.elapsedRealtime()
 
         val manager = getSystemService(
             Context.MEDIA_PROJECTION_SERVICE
@@ -78,14 +82,22 @@ class ScreenCaptureService : Service() {
 
             if (image != null) {
                 try {
-                    if (savedFirstImage.compareAndSet(false, true)) {
-                        saveFirstImage(image)
+                    val elapsed =
+                        SystemClock.elapsedRealtime() - startTime
+
+                    // Asteapta 10 secunde ca utilizatorul
+                    // sa deschida jocul Coin Master.
+                    if (elapsed >= 10000 &&
+                        savedImage.compareAndSet(false, true)
+                    ) {
+                        saveImage(image)
                     }
                 } catch (e: Exception) {
                     android.util.Log.e(
                         "CoinMaster",
-                        "Eroare captură: ${e.message}"
+                        "Eroare: ${e.message}"
                     )
+                    savedImage.set(false)
                 } finally {
                     image.close()
                 }
@@ -115,7 +127,7 @@ class ScreenCaptureService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun saveFirstImage(image: Image) {
+    private fun saveImage(image: Image) {
         val plane = image.planes[0]
         val buffer = plane.buffer
         val pixelStride = plane.pixelStride
@@ -135,11 +147,7 @@ class ScreenCaptureService : Service() {
         fullBitmap.copyPixelsFromBuffer(buffer)
 
         val bitmap = Bitmap.createBitmap(
-            fullBitmap,
-            0,
-            0,
-            width,
-            height
+            fullBitmap, 0, 0, width, height
         )
 
         val values = ContentValues().apply {
@@ -174,7 +182,7 @@ class ScreenCaptureService : Service() {
 
             android.util.Log.i(
                 "CoinMaster",
-                "Captură salvată: $uri"
+                "Imaginea jocului salvata: $uri"
             )
         }
 
@@ -186,7 +194,7 @@ class ScreenCaptureService : Service() {
         if (Build.VERSION.SDK_INT >= 26) {
             val channel = NotificationChannel(
                 "cm_capture",
-                "Coin Master captură",
+                "Coin Master captura",
                 NotificationManager.IMPORTANCE_LOW
             )
 
@@ -199,7 +207,7 @@ class ScreenCaptureService : Service() {
         return if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(this, "cm_capture")
                 .setContentTitle("Coin Master Contor")
-                .setContentText("Capturarea ecranului este activă")
+                .setContentText("Captura ecranului este activa")
                 .setSmallIcon(android.R.drawable.ic_menu_view)
                 .build()
         } else {
