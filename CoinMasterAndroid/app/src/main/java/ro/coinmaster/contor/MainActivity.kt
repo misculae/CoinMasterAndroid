@@ -8,7 +8,6 @@ import android.net.Uri
 import android.provider.Settings
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.Typeface
 import android.media.projection.MediaProjectionManager
 import android.view.Gravity
 import android.view.MotionEvent
@@ -31,15 +30,15 @@ class MainActivity : Activity() {
     private val CAPTURE_REQUEST = 1001
 
     private lateinit var wm: WindowManager
-    private var bubble: TextView? = null
     private var panel: LinearLayout? = null
-    private var overlayAdded = false
+    private var panelParams: WindowManager.LayoutParams? = null
 
-    private lateinit var status: TextView
     private lateinit var spinValue: TextView
     private lateinit var attackValue: TextView
     private lateinit var raidValue: TextView
     private lateinit var ghostValue: TextView
+    private lateinit var panelStatus: TextView
+    private lateinit var pauseButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,21 +63,6 @@ class MainActivity : Activity() {
 
         root.addView(label("COIN MASTER · CONTOR", 24f))
 
-        status = label("OPRIT", 16f, Color.LTGRAY)
-        root.addView(status)
-
-        spinValue = label("0", 42f)
-        root.addView(label("ROTIRI TOTALE", 14f, Color.LTGRAY))
-        root.addView(spinValue)
-
-        attackValue = label("🔨 Atacuri: 0", 20f)
-        raidValue = label("🐷 Raiduri: 0", 20f)
-        ghostValue = label("🍦 Înghețate: 0", 20f)
-
-        root.addView(attackValue)
-        root.addView(raidValue)
-        root.addView(ghostValue)
-
         val start = Button(this).apply {
             text = "START"
             setOnClickListener { startOverlay() }
@@ -88,7 +72,6 @@ class MainActivity : Activity() {
             text = "PAUZĂ"
             setOnClickListener {
                 running = false
-                update()
                 updateOverlay()
             }
         }
@@ -100,7 +83,6 @@ class MainActivity : Activity() {
                 attacks = 0
                 raids = 0
                 ghosts = 0
-                update()
                 updateOverlay()
             }
         }
@@ -108,16 +90,16 @@ class MainActivity : Activity() {
         root.addView(start)
         root.addView(pause)
         root.addView(reset)
-
         root.addView(label(
-            "Capturarea ecranului va fi solicitată la START. " +
-            "Recunoașterea simbolurilor urmează să fie adăugată.",
+            "Contoarele vor fi actualizate după adăugarea recunoașterii simbolurilor.",
             13f, Color.LTGRAY
         ))
 
         setContentView(root)
-        update()
     }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     private fun startOverlay() {
         if (!Settings.canDrawOverlays(this)) {
@@ -126,19 +108,13 @@ class MainActivity : Activity() {
                 Uri.parse("package:$packageName")
             )
             startActivity(intent)
-            Toast.makeText(
-                this,
-                "Activează afișarea peste alte aplicații.",
-                Toast.LENGTH_LONG
-            ).show()
             return
         }
 
-        showBubble()
+        showPanel()
 
         if (captureStarted) {
             running = true
-            update()
             updateOverlay()
         } else {
             requestScreenCapture()
@@ -183,7 +159,6 @@ class MainActivity : Activity() {
 
                     captureStarted = true
                     running = true
-                    update()
                     updateOverlay()
 
                     Toast.makeText(
@@ -197,12 +172,13 @@ class MainActivity : Activity() {
                 } catch (e: Exception) {
                     Toast.makeText(
                         this,
-                        "Eroare la pornirea capturării: ${e.message}",
+                        "Eroare: ${e.message}",
                         Toast.LENGTH_LONG
                     ).show()
                 }
             } else {
                 running = false
+                updateOverlay()
                 Toast.makeText(
                     this,
                     "Ai refuzat capturarea ecranului.",
@@ -212,35 +188,119 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showBubble() {
-        if (overlayAdded) return
+    private fun showPanel() {
+        if (panel != null) return
 
-        val bubbleView = TextView(this).apply {
-            text = "CM"
-            textSize = 17f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(100, 65, 190))
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(7), dp(5), dp(7), dp(5))
+            setBackgroundColor(Color.rgb(30, 28, 55))
         }
 
+        val heading = TextView(this).apply {
+            text = "COIN MASTER       ⠿"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(3))
+        }
+        box.addView(heading)
+
+        panelStatus = TextView(this).apply {
+            text = "OPRIT"
+            textSize = 9f
+            setTextColor(Color.LTGRAY)
+            gravity = Gravity.CENTER
+        }
+        box.addView(panelStatus)
+
+        spinValue = TextView(this).apply {
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+        }
+        box.addView(spinValue)
+
+        val counters = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        fun counterView(): TextView =
+            TextView(this).apply {
+                textSize = 11f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setPadding(dp(3), 0, dp(3), 0)
+            }
+
+        attackValue = counterView()
+        raidValue = counterView()
+        ghostValue = counterView()
+
+        counters.addView(attackValue)
+        counters.addView(raidValue)
+        counters.addView(ghostValue)
+        box.addView(counters)
+
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        pauseButton = Button(this).apply {
+            textSize = 9f
+            minHeight = dp(28)
+            minimumHeight = dp(28)
+            setPadding(dp(5), 0, dp(5), 0)
+            setOnClickListener {
+                if (captureStarted) {
+                    running = !running
+                    updateOverlay()
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Pornește captura din aplicația principală.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+
+        val close = Button(this).apply {
+            text = "X"
+            textSize = 9f
+            minHeight = dp(28)
+            minimumHeight = dp(28)
+            setPadding(dp(5), 0, dp(5), 0)
+            setOnClickListener {
+                wm.removeView(box)
+                panel = null
+                panelParams = null
+            }
+        }
+
+        buttons.addView(pauseButton)
+        buttons.addView(close)
+        box.addView(buttons)
+
         val params = WindowManager.LayoutParams(
-            58,
-            58,
+            dp(190),
+            WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 20
-            y = 250
+            x = dp(20)
+            y = dp(180)
         }
 
-        bubbleView.setOnTouchListener(object : View.OnTouchListener {
+        heading.setOnTouchListener(object : View.OnTouchListener {
             var startX = 0
             var startY = 0
             var touchX = 0f
             var touchY = 0f
-            var moved = false
 
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.action) {
@@ -249,135 +309,41 @@ class MainActivity : Activity() {
                         startY = params.y
                         touchX = event.rawX
                         touchY = event.rawY
-                        moved = false
                         return true
                     }
 
                     MotionEvent.ACTION_MOVE -> {
-                        val dx = (event.rawX - touchX).toInt()
-                        val dy = (event.rawY - touchY).toInt()
-
-                        if (kotlin.math.abs(dx) > 5 ||
-                            kotlin.math.abs(dy) > 5) {
-                            moved = true
-                        }
-
-                        params.x = startX + dx
-                        params.y = startY + dy
-                        wm.updateViewLayout(bubbleView, params)
-                        return true
-                    }
-
-                    MotionEvent.ACTION_UP -> {
-                        if (!moved) togglePanel()
+                        params.x = startX + (event.rawX - touchX).toInt()
+                        params.y = startY + (event.rawY - touchY).toInt()
+                        wm.updateViewLayout(box, params)
                         return true
                     }
                 }
-                return false
+                return true
             }
         })
 
-        wm.addView(bubbleView, params)
-        bubble = bubbleView
-        overlayAdded = true
-    }
-
-    private fun togglePanel() {
-        if (panel != null) {
-            wm.removeView(panel)
-            panel = null
-            return
-        }
-
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 14, 18, 14)
-            setBackgroundColor(Color.rgb(30, 28, 55))
-        }
-
-        fun item(text: String, size: Float = 17f) =
-            TextView(this).apply {
-                this.text = text
-                textSize = size
-                setTextColor(Color.WHITE)
-                setPadding(8, 8, 8, 8)
-            }
-
-        val heading = item("COIN MASTER · CONTOR", 18f)
-        heading.setTypeface(null, Typeface.BOLD)
-        box.addView(heading)
-
-        box.addView(item("Rotiri: $spins"))
-        box.addView(item("🔨 Atacuri: $attacks"))
-        box.addView(item("🐷 Raiduri: $raids"))
-        box.addView(item("🍦 Înghețate: $ghosts"))
-
-        val buttons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-
-        val pause = Button(this).apply {
-            text = if (running) "PAUZĂ" else "START"
-            setOnClickListener {
-                if (!captureStarted) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Pornește capturarea din aplicația principală.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else {
-                    running = !running
-                    update()
-                    updateOverlay()
-                }
-            }
-        }
-
-        val close = Button(this).apply {
-            text = "ÎNCHIDE"
-            setOnClickListener {
-                wm.removeView(box)
-                panel = null
-            }
-        }
-
-        buttons.addView(pause, LinearLayout.LayoutParams(0, -2, 1f))
-        buttons.addView(close, LinearLayout.LayoutParams(0, -2, 1f))
-        box.addView(buttons)
-
-        val params = WindowManager.LayoutParams(
-            290,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = 180
-        }
-
         wm.addView(box, params)
         panel = box
-    }
-
-    private fun update() {
-        spinValue.text = spins.toString()
-        attackValue.text = "🔨 Atacuri: $attacks"
-        raidValue.text = "🐷 Raiduri: $raids"
-        ghostValue.text = "🍦 Înghețate: $ghosts"
-        status.text = when {
-            running -> "CAPTURARE PORNITĂ"
-            captureStarted -> "CAPTURARE ÎN PAUZĂ"
-            else -> "OPRIT"
-        }
+        panelParams = params
+        updateOverlay()
     }
 
     private fun updateOverlay() {
-        if (panel != null) {
-            wm.removeView(panel)
-            panel = null
-            togglePanel()
+        if (panel == null) return
+
+        spinValue.text = "ROTIRI: $spins"
+        attackValue.text = "🔨 $attacks"
+        raidValue.text = "🐷 $raids"
+        ghostValue.text = "🍦 $ghosts"
+
+        panelStatus.text = when {
+            running -> "PORNIT"
+            captureStarted -> "PAUZĂ"
+            else -> "OPRIT"
         }
+
+        pauseButton.text = if (running) "PAUZĂ" else "START"
     }
 
     override fun onDestroy() {
