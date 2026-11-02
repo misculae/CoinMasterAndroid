@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
+import android.media.projection.MediaProjectionManager
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -25,6 +26,9 @@ class MainActivity : Activity() {
     private var raids = 0
     private var ghosts = 0
     private var running = false
+    private var captureStarted = false
+
+    private val CAPTURE_REQUEST = 1001
 
     private lateinit var wm: WindowManager
     private var bubble: TextView? = null
@@ -69,7 +73,7 @@ class MainActivity : Activity() {
 
         attackValue = label("🔨 Atacuri: 0", 20f)
         raidValue = label("🐷 Raiduri: 0", 20f)
-        ghostValue = label("👻 Fantome: 0", 20f)
+        ghostValue = label("🍦 Înghețate: 0", 20f)
 
         root.addView(attackValue)
         root.addView(raidValue)
@@ -106,8 +110,8 @@ class MainActivity : Activity() {
         root.addView(reset)
 
         root.addView(label(
-            "Fereastra plutitoare este pregătită. " +
-            "Detectorul automat al simbolurilor nu este încă implementat.",
+            "Capturarea ecranului va fi solicitată la START. " +
+            "Recunoașterea simbolurilor urmează să fie adăugată.",
             13f, Color.LTGRAY
         ))
 
@@ -124,19 +128,88 @@ class MainActivity : Activity() {
             startActivity(intent)
             Toast.makeText(
                 this,
-                "Activează Permite afișarea peste alte aplicații.",
+                "Activează afișarea peste alte aplicații.",
                 Toast.LENGTH_LONG
             ).show()
             return
         }
 
-        running = true
-        update()
         showBubble()
 
-        Toast.makeText(this, "Contorul plutitor este pornit", Toast.LENGTH_SHORT).show()
+        if (captureStarted) {
+            running = true
+            update()
+            updateOverlay()
+        } else {
+            requestScreenCapture()
+        }
+    }
 
-        moveTaskToBack(true)
+    private fun requestScreenCapture() {
+        val manager = getSystemService(
+            MEDIA_PROJECTION_SERVICE
+        ) as MediaProjectionManager
+
+        startActivityForResult(
+            manager.createScreenCaptureIntent(),
+            CAPTURE_REQUEST
+        )
+    }
+
+    @Deprecated("Legacy activity result")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == CAPTURE_REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                val serviceIntent = Intent(
+                    this,
+                    ScreenCaptureService::class.java
+                ).apply {
+                    putExtra("resultCode", resultCode)
+                    putExtra("data", data)
+                }
+
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= 26) {
+                        startForegroundService(serviceIntent)
+                    } else {
+                        startService(serviceIntent)
+                    }
+
+                    captureStarted = true
+                    running = true
+                    update()
+                    updateOverlay()
+
+                    Toast.makeText(
+                        this,
+                        "Capturarea ecranului a pornit!",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    moveTaskToBack(true)
+
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        this,
+                        "Eroare la pornirea capturării: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } else {
+                running = false
+                Toast.makeText(
+                    this,
+                    "Ai refuzat capturarea ecranului.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     private fun showBubble() {
@@ -148,7 +221,6 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             setBackgroundColor(Color.rgb(100, 65, 190))
-            setOnClickListener { togglePanel() }
         }
 
         val params = WindowManager.LayoutParams(
@@ -185,7 +257,8 @@ class MainActivity : Activity() {
                         val dx = (event.rawX - touchX).toInt()
                         val dy = (event.rawY - touchY).toInt()
 
-                        if (kotlin.math.abs(dx) > 5 || kotlin.math.abs(dy) > 5) {
+                        if (kotlin.math.abs(dx) > 5 ||
+                            kotlin.math.abs(dy) > 5) {
                             moved = true
                         }
 
@@ -237,7 +310,7 @@ class MainActivity : Activity() {
         box.addView(item("Rotiri: $spins"))
         box.addView(item("🔨 Atacuri: $attacks"))
         box.addView(item("🐷 Raiduri: $raids"))
-        box.addView(item("👻 Fantome: $ghosts"))
+        box.addView(item("🍦 Înghețate: $ghosts"))
 
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -246,9 +319,17 @@ class MainActivity : Activity() {
         val pause = Button(this).apply {
             text = if (running) "PAUZĂ" else "START"
             setOnClickListener {
-                running = !running
-                update()
-                updateOverlay()
+                if (!captureStarted) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Pornește capturarea din aplicația principală.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    running = !running
+                    update()
+                    updateOverlay()
+                }
             }
         }
 
@@ -283,8 +364,12 @@ class MainActivity : Activity() {
         spinValue.text = spins.toString()
         attackValue.text = "🔨 Atacuri: $attacks"
         raidValue.text = "🐷 Raiduri: $raids"
-        ghostValue.text = "👻 Fantome: $ghosts"
-        status.text = if (running) "PORNIT" else "PAUZĂ"
+        ghostValue.text = "🍦 Înghețate: $ghosts"
+        status.text = when {
+            running -> "CAPTURARE PORNITĂ"
+            captureStarted -> "CAPTURARE ÎN PAUZĂ"
+            else -> "OPRIT"
+        }
     }
 
     private fun updateOverlay() {
@@ -297,6 +382,5 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Fereastra plutitoare rămâne atașată cât timp procesul aplicației există.
     }
 }
