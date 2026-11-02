@@ -1,0 +1,18 @@
+workflows:
+  android-workflow:
+    name: Coin Master Android
+    max_build_duration: 60
+    instance_type: linux_x2
+
+    environment:
+      java: 17
+
+    scripts:
+      - name: Check Gradle
+        script: gradle --version
+
+      - name: Build Android APK
+        script: gradle :app:assembleDebug
+
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
