@@ -89,7 +89,15 @@ class MainActivity : Activity() {
 
         root.addView(start)
         root.addView(pause)
-        root.addView(reset)
+        root.addView(reset)val calibrate = Button(this).apply {
+    text = "CALIBRARE SIMBOLURI"
+    setOnClickListener {
+        startActivity(
+            Intent(this@MainActivity, CalibrationActivity::class.java)
+        )
+    }
+}
+root.addView(calibrate)
         root.addView(label(
             "Contoarele vor fi actualizate după adăugarea recunoașterii simbolurilor.",
             13f, Color.LTGRAY
