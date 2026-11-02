@@ -52,20 +52,25 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(20, 19, 38))
         }
 
-        fun label(value: String, size: Float, color: Int = Color.WHITE) =
-            TextView(this).apply {
-                text = value
-                textSize = size
-                setTextColor(color)
-                gravity = Gravity.CENTER
-                setPadding(8, 8, 8, 8)
-            }
+        fun label(
+            value: String,
+            size: Float,
+            color: Int = Color.WHITE
+        ) = TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            gravity = Gravity.CENTER
+            setPadding(8, 8, 8, 8)
+        }
 
         root.addView(label("COIN MASTER · CONTOR", 24f))
 
         val start = Button(this).apply {
             text = "START"
-            setOnClickListener { startOverlay() }
+            setOnClickListener {
+                startOverlay()
+            }
         }
 
         val pause = Button(this).apply {
@@ -87,27 +92,37 @@ class MainActivity : Activity() {
             }
         }
 
+        val calibrate = Button(this).apply {
+            text = "CALIBRARE SIMBOLURI"
+            setOnClickListener {
+                startActivity(
+                    Intent(
+                        this@MainActivity,
+                        CalibrationActivity::class.java
+                    )
+                )
+            }
+        }
+
         root.addView(start)
         root.addView(pause)
-        root.addView(reset)val calibrate = Button(this).apply {
-    text = "CALIBRARE SIMBOLURI"
-    setOnClickListener {
-        startActivity(
-            Intent(this@MainActivity, CalibrationActivity::class.java)
+        root.addView(reset)
+        root.addView(calibrate)
+
+        root.addView(
+            label(
+                "Contoarele vor fi actualizate după adăugarea recunoașterii simbolurilor.",
+                13f,
+                Color.LTGRAY
+            )
         )
-    }
-}
-root.addView(calibrate)
-        root.addView(label(
-            "Contoarele vor fi actualizate după adăugarea recunoașterii simbolurilor.",
-            13f, Color.LTGRAY
-        ))
 
         setContentView(root)
     }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
+    }
 
     private fun startOverlay() {
         if (!Settings.canDrawOverlays(this)) {
@@ -149,7 +164,9 @@ root.addView(calibrate)
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == CAPTURE_REQUEST) {
+
             if (resultCode == RESULT_OK && data != null) {
+
                 val serviceIntent = Intent(
                     this,
                     ScreenCaptureService::class.java
@@ -184,9 +201,11 @@ root.addView(calibrate)
                         Toast.LENGTH_LONG
                     ).show()
                 }
+
             } else {
                 running = false
                 updateOverlay()
+
                 Toast.makeText(
                     this,
                     "Ai refuzat capturarea ecranului.",
@@ -212,6 +231,7 @@ root.addView(calibrate)
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(3))
         }
+
         box.addView(heading)
 
         panelStatus = TextView(this).apply {
@@ -220,6 +240,7 @@ root.addView(calibrate)
             setTextColor(Color.LTGRAY)
             gravity = Gravity.CENTER
         }
+
         box.addView(panelStatus)
 
         spinValue = TextView(this).apply {
@@ -227,6 +248,7 @@ root.addView(calibrate)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
         }
+
         box.addView(spinValue)
 
         val counters = LinearLayout(this).apply {
@@ -234,13 +256,14 @@ root.addView(calibrate)
             gravity = Gravity.CENTER
         }
 
-        fun counterView(): TextView =
-            TextView(this).apply {
+        fun counterView(): TextView {
+            return TextView(this).apply {
                 textSize = 11f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
                 setPadding(dp(3), 0, dp(3), 0)
             }
+        }
 
         attackValue = counterView()
         raidValue = counterView()
@@ -249,6 +272,7 @@ root.addView(calibrate)
         counters.addView(attackValue)
         counters.addView(raidValue)
         counters.addView(ghostValue)
+
         box.addView(counters)
 
         val buttons = LinearLayout(this).apply {
@@ -261,6 +285,7 @@ root.addView(calibrate)
             minHeight = dp(28)
             minimumHeight = dp(28)
             setPadding(dp(5), 0, dp(5), 0)
+
             setOnClickListener {
                 if (captureStarted) {
                     running = !running
@@ -281,15 +306,19 @@ root.addView(calibrate)
             minHeight = dp(28)
             minimumHeight = dp(28)
             setPadding(dp(5), 0, dp(5), 0)
+
             setOnClickListener {
-                wm.removeView(box)
-                panel = null
-                panelParams = null
+                if (panel != null) {
+                    wm.removeView(box)
+                    panel = null
+                    panelParams = null
+                }
             }
         }
 
         buttons.addView(pauseButton)
         buttons.addView(close)
+
         box.addView(buttons)
 
         val params = WindowManager.LayoutParams(
@@ -304,36 +333,51 @@ root.addView(calibrate)
             y = dp(180)
         }
 
-        heading.setOnTouchListener(object : View.OnTouchListener {
-            var startX = 0
-            var startY = 0
-            var touchX = 0f
-            var touchY = 0f
+        heading.setOnTouchListener(
+            object : View.OnTouchListener {
 
-            override fun onTouch(v: View, event: MotionEvent): Boolean {
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        startX = params.x
-                        startY = params.y
-                        touchX = event.rawX
-                        touchY = event.rawY
-                        return true
+                var startX = 0
+                var startY = 0
+                var touchX = 0f
+                var touchY = 0f
+
+                override fun onTouch(
+                    v: View,
+                    event: MotionEvent
+                ): Boolean {
+
+                    when (event.action) {
+
+                        MotionEvent.ACTION_DOWN -> {
+                            startX = params.x
+                            startY = params.y
+                            touchX = event.rawX
+                            touchY = event.rawY
+                            return true
+                        }
+
+                        MotionEvent.ACTION_MOVE -> {
+                            params.x = startX +
+                                (event.rawX - touchX).toInt()
+
+                            params.y = startY +
+                                (event.rawY - touchY).toInt()
+
+                            wm.updateViewLayout(box, params)
+                            return true
+                        }
                     }
 
-                    MotionEvent.ACTION_MOVE -> {
-                        params.x = startX + (event.rawX - touchX).toInt()
-                        params.y = startY + (event.rawY - touchY).toInt()
-                        wm.updateViewLayout(box, params)
-                        return true
-                    }
+                    return true
                 }
-                return true
             }
-        })
+        )
 
         wm.addView(box, params)
+
         panel = box
         panelParams = params
+
         updateOverlay()
     }
 
