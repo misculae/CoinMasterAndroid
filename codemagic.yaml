@@ -8,11 +8,10 @@ workflows:
       java: 17
 
     scripts:
-      - name: Check Gradle
-        script: gradle --version
-
       - name: Build Android APK
-        script: gradle :app:assembleDebug
+        script: |
+          cd CoinMasterAndroid
+          gradle :app:assembleDebug
 
     artifacts:
-      - app/build/outputs/apk/debug/*.apk
+      - CoinMasterAndroid/app/build/outputs/apk/debug/*.apk
